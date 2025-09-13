@@ -1,0 +1,14 @@
+# Create/overwrite .gitignore
+cat > .gitignore <<'EOF'
+# Node / Vite / React
+node_modules/
+dist/
+build/
+.vite/
+.DS_Store
+*.log
+.env*
+EOF
+
+# Remove already-tracked node_modules from Git (keeps files on disk)
+git rm -r --cached node_modules
