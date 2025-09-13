@@ -1,0 +1,28 @@
+{
+  "name": "Comment",
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "ID of the memory being commented on"
+    },
+    "text": {
+      "type": "string",
+      "description": "Comment text"
+    },
+    "author_name": {
+      "type": "string",
+      "description": "Name of comment author"
+    },
+    "author_email": {
+      "type": "string",
+      "description": "Email of comment author"
+    }
+  },
+  "required": [
+    "memory_id",
+    "text",
+    "author_name",
+    "author_email"
+  ]
+}

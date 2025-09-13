@@ -1,0 +1,33 @@
+{
+  "name": "Reaction",
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "ID of the memory being reacted to"
+    },
+    "reaction_type": {
+      "type": "string",
+      "enum": [
+        "heart",
+        "smile",
+        "celebrate"
+      ],
+      "default": "heart",
+      "description": "Type of reaction"
+    },
+    "author_name": {
+      "type": "string",
+      "description": "Name of reaction author"
+    },
+    "author_email": {
+      "type": "string",
+      "description": "Email of reaction author"
+    }
+  },
+  "required": [
+    "memory_id",
+    "author_name",
+    "author_email"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "AlbumMembership",
+  "type": "object",
+  "properties": {
+    "album_id": {
+      "type": "string",
+      "description": "ID of the album"
+    },
+    "album_title": {
+      "type": "string",
+      "description": "Title of the album"
+    },
+    "user_email": {
+      "type": "string",
+      "description": "Email of the member"
+    },
+    "user_name": {
+      "type": "string",
+      "description": "Name of the member"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "owner",
+        "member"
+      ],
+      "default": "member",
+      "description": "Role in the album"
+    },
+    "joined_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date joined the album"
+    }
+  },
+  "required": [
+    "album_id",
+    "user_email",
+    "user_name"
+  ]
+}

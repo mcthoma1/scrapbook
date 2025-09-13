@@ -1,0 +1,69 @@
+{
+  "name": "Memory",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Memory title"
+    },
+    "caption": {
+      "type": "string",
+      "description": "Memory caption/description"
+    },
+    "album_id": {
+      "type": "string",
+      "description": "ID of the album this memory belongs to"
+    },
+    "album_title": {
+      "type": "string",
+      "description": "Title of the album for easy display"
+    },
+    "memory_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date when the memory happened"
+    },
+    "media_type": {
+      "type": "string",
+      "enum": [
+        "photo",
+        "video",
+        "text",
+        "voice"
+      ],
+      "description": "Type of memory"
+    },
+    "media_url": {
+      "type": "string",
+      "description": "URL to photo/video/audio file"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Tags for the memory"
+    },
+    "author_name": {
+      "type": "string",
+      "description": "Name of memory author"
+    },
+    "reaction_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of reactions"
+    },
+    "comment_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of comments"
+    }
+  },
+  "required": [
+    "title",
+    "album_id",
+    "memory_date",
+    "media_type",
+    "author_name"
+  ]
+}

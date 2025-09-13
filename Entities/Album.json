@@ -1,0 +1,40 @@
+{
+  "name": "Album",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Album title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Album description"
+    },
+    "cover_image": {
+      "type": "string",
+      "description": "URL to cover image"
+    },
+    "invite_code": {
+      "type": "string",
+      "description": "Unique invite code to join album"
+    },
+    "is_private": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether album is private"
+    },
+    "created_by_name": {
+      "type": "string",
+      "description": "Name of album creator"
+    },
+    "member_count": {
+      "type": "number",
+      "default": 1,
+      "description": "Number of members in album"
+    }
+  },
+  "required": [
+    "title",
+    "invite_code"
+  ]
+}
