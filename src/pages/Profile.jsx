@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { User } from "@/entities/User";
+import { User } from "@/entities/all";
 import { Camera, Settings, Heart, LogOut } from "lucide-react";
 
 export default function Profile() {
