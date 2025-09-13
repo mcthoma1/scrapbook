@@ -28,6 +28,7 @@
   },
   "homepage": "https://github.com/mcthoma1/scrapbook#readme",
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
     "@vitejs/plugin-react": "^5.0.2",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
