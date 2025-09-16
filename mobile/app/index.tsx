@@ -1,142 +1,165 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, FlatList, Image, Platform, Pressable, SafeAreaView, StatusBar, Text, View } from 'react-native';
+// SUMMARY: Home screen. Shows your local gallery, lets you add a photo from the device,
+// and delete on long-press. Everything stays on-device (no uploads).
+// This version also adds an "Albums" button in the header and uses <MemoryCard> for each tile.
+
+import MemoryCard from '../src/components/MemoryCard';
+
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
-import { useRouter, type Href } from 'expo-router';
+import { Link } from 'expo-router';
 
-type MediaItem = { id: string; uri: string; createdAt: number };
+import { listMemories, insertMemory, deleteMemoryById } from '../src/lib/db';
+import type { MediaItem } from '../src/lib/types';
+import { copyIntoMediaDir, deleteFileIfExists } from '../src/lib/fs';
 
-const db: SQLiteDatabase = openDatabaseSync('scrapbook.db');
-
-export default function Index() {
+export default function HomeScreen() {
   const [items, setItems] = useState<MediaItem[]>([]);
-  const router = useRouter();
+  const [busy, setBusy] = useState(false);
 
+  // 1) On load, ask the DB for rows and show them newest-first.
   useEffect(() => {
     (async () => {
-      try {
-        await db.execAsync(`
-          CREATE TABLE IF NOT EXISTS media (
-            id TEXT PRIMARY KEY NOT NULL,
-            uri TEXT NOT NULL,
-            createdAt INTEGER NOT NULL
-          );
-        `);
-        const rows = await db.getAllAsync<MediaItem>(
-          'SELECT id, uri, createdAt FROM media ORDER BY createdAt DESC;'
-        );
-        setItems(rows);
-      } catch (e) {
-        console.warn('db init/load error', e);
-      }
+      const rows = await listMemories();
+      setItems(rows);
     })();
   }, []);
 
-  const pickAndSave = useCallback(async () => {
+  // 2) Add flow: ask permission -> pick -> copy into private folder -> save a DB row -> update list.
+  const pickAndAdd = useCallback(async () => {
     try {
-      const res = await ImagePicker.launchImageLibraryAsync({
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert('Permission needed', 'Allow photo library access to add images.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
+        allowsEditing: false,
+        quality: 1,
       });
-      if (res.canceled) return;
+      if (result.canceled) return;
 
-      const asset = res.assets[0];
+      setBusy(true);
+      const asset = result.assets[0];
 
-      const baseDir = ((FileSystem as any).documentDirectory ?? (FileSystem as any).cacheDirectory) as string;
-      if (!baseDir) throw new Error('No writable base directory available');
-      const dir = baseDir + 'media/';
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-
-      const nameFromAsset = asset.fileName ?? `image_${Date.now()}`;
-      const fromNameExt = nameFromAsset.includes('.') ? nameFromAsset.split('.').pop() : undefined;
-      const fromMimeExt = asset.mimeType && asset.mimeType.includes('/') ? asset.mimeType.split('/').pop() : undefined;
-      const ext = (fromNameExt || fromMimeExt || 'jpg').toLowerCase();
-      const filename = `${Date.now()}.${ext}`;
-      const to = dir + filename;
-
-      await FileSystem.copyAsync({ from: asset.uri, to });
+      // Coerce possible nulls from ImagePicker to undefined so types line up.
+      const to = await copyIntoMediaDir({
+        uri: asset.uri,
+        fileName: asset.fileName ?? undefined,
+        mimeType: asset.mimeType ?? undefined,
+      });
 
       const id = String(Date.now());
       const createdAt = Date.now();
-      await db.runAsync(
-        'INSERT INTO media (id, uri, createdAt) VALUES (?, ?, ?);',
-        [id, to, createdAt]
-      );
+      await insertMemory({ id, uri: to, createdAt });
 
-      setItems((prev) => [{ id, uri: to, createdAt }, ...prev]);
+      // Optimistic update (fast). Alternatively, re-run listMemories().
+      setItems(prev => [{ id, uri: to, createdAt }, ...prev]);
     } catch (e) {
-      console.warn('pickAndSave error', e);
+      console.warn('pick-and-add error', e);
+      Alert.alert('Could not add photo', 'Please try again.');
+    } finally {
+      setBusy(false);
     }
   }, []);
 
+  // 3) Delete flow: confirm -> delete file (safe) -> delete DB row -> update list.
   const deleteItem = useCallback(async (item: MediaItem) => {
-    try {
-      await db.runAsync('DELETE FROM media WHERE id = ?;', [item.id]);
-      await FileSystem.deleteAsync(item.uri, { idempotent: true });
-      setItems(prev => prev.filter(i => i.id !== item.id));
-    } catch (e) {
-      console.warn('delete error', e);
-      Alert.alert('Delete failed', 'Could not delete this item. Please try again.');
-    }
+    Alert.alert('Delete photo?', 'This will remove it from the app.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteFileIfExists(item.uri);
+            await deleteMemoryById(item.id);
+            setItems(prev => prev.filter(i => i.id !== item.id));
+          } catch (e) {
+            console.warn('delete error', e);
+            Alert.alert('Delete failed', 'Could not delete this item. Please try again.');
+          }
+        },
+      },
+    ]);
   }, []);
+
+  // 4) Each square: tap opens detail; long-press deletes. Use MemoryCard for the tile UI.
+  const renderItem = ({ item }: { item: MediaItem }) => (
+    <Link href={`/memory/${item.id}`} asChild>
+      <MemoryCard item={item} onLongPress={() => deleteItem(item)} />
+    </Link>
+  );
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <StatusBar barStyle={Platform.OS === 'ios' ? 'dark-content' : 'default'} />
-      <View style={{ padding: 12 }}>
-        <Button title="Add Photo (save to device)" onPress={pickAndSave} />
+    <SafeAreaView style={styles.safe}>
+      {/* Header with title, Albums button, and Add Photo button */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Scrapbook</Text>
 
-        <View style={{ height: 8 }} />
-        <Button
-          title="Clear list (keeps files)"
-          onPress={() => {
-            (async () => {
-              try {
-                await db.runAsync('DELETE FROM media;');
-                setItems([]);
-              } catch (e) {
-                console.warn('clear list error', e);
-              }
-            })();
-          }}
-          color={Platform.OS === 'ios' ? '#888' : undefined}
-        />
-
-        {items.length === 0 ? (
-          <Text style={{ marginTop: 16 }}>
-            Pick an image to save it privately to this app’s storage.
-          </Text>
-        ) : (
-          <FlatList
-            contentContainerStyle={{ paddingVertical: 16 }}
-            data={items}
-            keyExtractor={(it) => it.id}
-            numColumns={2}
-            columnWrapperStyle={{ gap: 12 }}
-            renderItem={({ item }) => (
-              <View style={{ flex: 1, marginBottom: 12 }}>
-                  <Pressable onPress={() => router.push(`/memory/${item.id}` as Href)}>
-                  <Image
-                    source={{ uri: item.uri }}
-                    style={{ width: '100%', aspectRatio: 1, borderRadius: 12, marginBottom: 8 }}
-                  />
-                </Pressable>
-                <Button
-                  title="Delete"
-                  color={Platform.OS === 'ios' ? '#cc3b3b' : undefined}
-                  onPress={() =>
-                    Alert.alert('Delete photo?', 'This will remove it from the app.', [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => void deleteItem(item) },
-                    ])
-                  }
-                />
-              </View>
-            )}
-          />
-        )}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Link href="/albums" asChild>
+            <Pressable style={styles.secondaryBtn}>
+              <Text style={styles.secondaryLabel}>Albums</Text>
+            </Pressable>
+          </Link>
+          <Pressable style={[styles.addBtn, busy && styles.addBtnDisabled]} onPress={pickAndAdd} disabled={busy}>
+            <Text style={styles.addLabel}>{busy ? 'Adding…' : 'Add Photo'}</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {items.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No memories yet</Text>
+          <Text style={styles.emptyBody}>Add your first photo. Everything stays on this device.</Text>
+          <Pressable style={styles.addBtn} onPress={pickAndAdd} disabled={busy}>
+            <Text style={styles.addLabel}>{busy ? 'Adding…' : 'Add Photo'}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(m) => m.id}
+          numColumns={2}
+          renderItem={renderItem}
+          contentContainerStyle={styles.grid}
+        />
+      )}
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#fff' },
+
+  header: { padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontSize: 20, fontWeight: '600' },
+
+  // New secondary button for "Albums"
+  secondaryBtn: { paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#E5E7EB', borderRadius: 10 },
+  secondaryLabel: { color: '#111827', fontWeight: '600' },
+
+  // Add Photo button
+  addBtn: { paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#111827', borderRadius: 10 },
+  addBtnDisabled: { opacity: 0.6 },
+  addLabel: { color: '#fff', fontWeight: '600' },
+
+  // Grid padding
+  grid: { paddingHorizontal: 8, paddingBottom: 24 },
+
+  // Empty state
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
+  emptyTitle: { fontSize: 18, fontWeight: '700' },
+  emptyBody: { fontSize: 14, color: '#6b7280', textAlign: 'center' },
+});
