@@ -171,7 +171,7 @@ async function ensureDb() {
       createdAt INTEGER NOT NULL,
       FOREIGN KEY (memoryId) REFERENCES memories(id) ON DELETE CASCADE
     );
-  `);
+  `)
 
   await ensureAlbumSchema();
   await ensureAlbumMembershipSchema();
@@ -669,7 +669,6 @@ export async function createComment(data: {
   const row = await db!.getFirstAsync<any>(`SELECT * FROM comments WHERE id = ?;`, [id]);
   return mapComment(row);
 }
-
 export async function listReactions(memoryId: string): Promise<Reaction[]> {
   await ensureDb();
   const rows = await db!.getAllAsync<any>(
