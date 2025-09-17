@@ -2,6 +2,8 @@
 
 # dependencies
 node_modules/
+.cursor/
+.vscode/
 
 # Expo
 .expo/
