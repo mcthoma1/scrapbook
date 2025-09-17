@@ -22,7 +22,6 @@ import {
 } from "../../src/lib/db";
 import type { Album, AlbumMembership, UserProfile } from "../../src/lib/types";
 
-
 function CreateAlbumModal({
   visible,
   onClose,
@@ -70,7 +69,6 @@ function CreateAlbumModal({
               <Feather name="x" size={20} color="#6B7280" />
             </Pressable>
           </View>
-
           <TextInput
             style={styles.modalInput}
             value={title}
@@ -257,7 +255,6 @@ export default function AlbumsScreen() {
       {loading ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
           <ActivityIndicator size="large" color="#FB7185" />
-
         </View>
       ) : rows.length === 0 ? (
         <View style={styles.emptyState}>
@@ -268,7 +265,6 @@ export default function AlbumsScreen() {
           <Text style={styles.emptyBody}>
             Create a new album for your family or join with an invite code.
           </Text>
-
         </View>
       ) : (
         <FlatList
@@ -498,5 +494,4 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     textAlign: "center",
   },
-
 });

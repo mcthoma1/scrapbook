@@ -36,6 +36,43 @@ async function generateUniqueInviteCode(): Promise<string> {
   throw new Error("INVITE_CODE_GENERATION_FAILED");
 }
 
+async function ensureAlbumSchema() {
+  if (!db) return;
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(albums);`);
+  const columnNames = new Set(columns.map((column) => column.name));
+  const addColumn = async (name: string, definition: string) => {
+    if (columnNames.has(name)) return;
+    await db!.execAsync(`ALTER TABLE albums ADD COLUMN ${name} ${definition};`);
+    columnNames.add(name);
+  };
+
+  await addColumn("description", "TEXT");
+  await addColumn("coverImage", "TEXT");
+  await addColumn("inviteCode", "TEXT");
+  await addColumn("createdByEmail", "TEXT");
+  await addColumn("createdByName", "TEXT");
+
+  await db!.execAsync(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_inviteCode ON albums(inviteCode) WHERE inviteCode IS NOT NULL;`
+  );
+}
+
+async function ensureAlbumMembershipSchema() {
+  if (!db) return;
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(album_memberships);`);
+  const columnNames = new Set(columns.map((column) => column.name));
+  const addColumn = async (name: string, definition: string) => {
+    if (columnNames.has(name)) return;
+    await db!.execAsync(`ALTER TABLE album_memberships ADD COLUMN ${name} ${definition};`);
+    columnNames.add(name);
+  };
+
+  await addColumn("albumTitle", "TEXT");
+  await addColumn("userName", "TEXT");
+  await addColumn("role", "TEXT DEFAULT 'member'");
+  await addColumn("joinedDate", "INTEGER DEFAULT 0");
+}
+
 async function ensureDb() {
   if (!db) {
     db = openDatabaseSync("scrapbook.db");
@@ -134,7 +171,10 @@ async function ensureDb() {
       createdAt INTEGER NOT NULL,
       FOREIGN KEY (memoryId) REFERENCES memories(id) ON DELETE CASCADE
     );
-  `);
+  `)
+
+  await ensureAlbumSchema();
+  await ensureAlbumMembershipSchema();
 }
 
 async function getAppState(key: string): Promise<string | null> {
@@ -520,12 +560,12 @@ export async function getMemoryById(id: string): Promise<Memory | null> {
 export async function createMemory(data: NewMemory): Promise<Memory> {
   await ensureDb();
   const createdAt = Date.now();
-  const id = data.id ?? uuid();
+  const memoryId = data.id ?? uuid();
   await db!.runAsync(
     `INSERT INTO memories (id, albumId, albumTitle, title, caption, memoryDate, mediaType, mediaUri, locationName, tags, authorName, authorEmail, reactionCount, commentCount, createdAt, createdDate)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?);`,
     [
-      id,
+      memoryId,
       data.albumId,
       data.albumTitle,
       data.title,
@@ -541,7 +581,7 @@ export async function createMemory(data: NewMemory): Promise<Memory> {
       new Date(createdAt).toISOString(),
     ]
   );
-  const row = await db!.getFirstAsync<any>(`SELECT * FROM memories WHERE id = ?;`, [id]);
+  const row = await db!.getFirstAsync<any>(`SELECT * FROM memories WHERE id = ?;`, [memoryId]);
   return mapMemory(row);
 }
 
@@ -629,7 +669,6 @@ export async function createComment(data: {
   const row = await db!.getFirstAsync<any>(`SELECT * FROM comments WHERE id = ?;`, [id]);
   return mapComment(row);
 }
-
 export async function listReactions(memoryId: string): Promise<Reaction[]> {
   await ensureDb();
   const rows = await db!.getAllAsync<any>(
@@ -662,150 +701,6 @@ export async function toggleReaction(params: {
 
   const id = uuid();
   const createdAt = Date.now();
-
-  const id = data.id ?? uuid();
-  await db!.runAsync(
-    `INSERT INTO memories (id, albumId, albumTitle, title, caption, memoryDate, mediaType, mediaUri, locationName, tags, authorName, authorEmail, reactionCount, commentCount, createdAt, createdDate)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?);`,
-    [
-      id,
-      data.albumId,
-      data.albumTitle,
-      data.title,
-      data.caption ?? "",
-      data.memoryDate,
-      data.mediaType,
-      data.mediaUri ?? null,
-      data.locationName ?? null,
-      JSON.stringify(data.tags ?? []),
-      data.authorName,
-      data.authorEmail,
-      createdAt,
-      new Date(createdAt).toISOString(),
-    ]
-  );
-  const row = await db!.getFirstAsync<any>(`SELECT * FROM memories WHERE id = ?;`, [id]);
-  return mapMemory(row);
-}
-
-export async function updateMemory(id: string, updates: Partial<Memory>): Promise<void> {
-  await ensureDb();
-  const fields: string[] = [];
-  const values: any[] = [];
-
-  if (updates.title !== undefined) {
-    fields.push("title = ?");
-    values.push(updates.title);
-  }
-  if (updates.caption !== undefined) {
-    fields.push("caption = ?");
-    values.push(updates.caption ?? "");
-  }
-  if (updates.memoryDate !== undefined) {
-    fields.push("memoryDate = ?");
-    values.push(updates.memoryDate);
-  }
-  if (updates.tags !== undefined) {
-    fields.push("tags = ?");
-    values.push(JSON.stringify(updates.tags));
-  }
-  if (updates.reactionCount !== undefined) {
-    fields.push("reactionCount = ?");
-    values.push(updates.reactionCount);
-  }
-  if (updates.commentCount !== undefined) {
-    fields.push("commentCount = ?");
-    values.push(updates.commentCount);
-  }
-  if (updates.albumTitle !== undefined) {
-    fields.push("albumTitle = ?");
-    values.push(updates.albumTitle);
-  }
-  if (updates.locationName !== undefined) {
-    fields.push("locationName = ?");
-    values.push(updates.locationName ?? null);
-  }
-
-  if (fields.length === 0) return;
-
-  values.push(id);
-  await db!.runAsync(
-    `UPDATE memories SET ${fields.join(", ")} WHERE id = ?;`,
-    values
-  );
-}
-
-export async function deleteMemory(id: string): Promise<void> {
-  await ensureDb();
-  await db!.runAsync(`DELETE FROM comments WHERE memoryId = ?;`, [id]);
-  await db!.runAsync(`DELETE FROM reactions WHERE memoryId = ?;`, [id]);
-  await db!.runAsync(`DELETE FROM memories WHERE id = ?;`, [id]);
-}
-
-export async function listComments(memoryId: string): Promise<Comment[]> {
-  await ensureDb();
-  const rows = await db!.getAllAsync<any>(
-    `SELECT * FROM comments WHERE memoryId = ? ORDER BY createdAt DESC;`,
-    [memoryId]
-  );
-  return rows.map(mapComment);
-}
-
-export async function createComment(data: {
-  memoryId: string;
-  text: string;
-  authorName: string;
-  authorEmail: string;
-}): Promise<Comment> {
-  await ensureDb();
-  const id = uuid();
-  const createdAt = Date.now();
-  await db!.runAsync(
-    `INSERT INTO comments (id, memoryId, text, authorName, authorEmail, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?);`,
-    [id, data.memoryId, data.text, data.authorName, data.authorEmail, createdAt]
-  );
-  await db!.runAsync(
-    `UPDATE memories SET commentCount = commentCount + 1 WHERE id = ?;`,
-    [data.memoryId]
-  );
-  const row = await db!.getFirstAsync<any>(`SELECT * FROM comments WHERE id = ?;`, [id]);
-  return mapComment(row);
-}
-
-export async function listReactions(memoryId: string): Promise<Reaction[]> {
-  await ensureDb();
-  const rows = await db!.getAllAsync<any>(
-    `SELECT * FROM reactions WHERE memoryId = ? ORDER BY createdAt DESC;`,
-    [memoryId]
-  );
-  return rows.map(mapReaction);
-}
-
-export async function toggleReaction(params: {
-  memoryId: string;
-  reactionType?: Reaction["reactionType"];
-  authorName: string;
-  authorEmail: string;
-}): Promise<boolean> {
-  await ensureDb();
-  const reaction = await db!.getFirstAsync<any>(
-    `SELECT * FROM reactions WHERE memoryId = ? AND authorEmail = ?;`,
-    [params.memoryId, params.authorEmail]
-  );
-
-  if (reaction) {
-    await db!.runAsync(`DELETE FROM reactions WHERE id = ?;`, [reaction.id]);
-    await db!.runAsync(
-      `UPDATE memories SET reactionCount = CASE WHEN reactionCount > 0 THEN reactionCount - 1 ELSE 0 END WHERE id = ?;`,
-      [params.memoryId]
-    );
-    return false;
-  }
-
-  const id = uuid();
-  const createdAt = Date.now();
->>>>>>> main
   await db!.runAsync(
     `INSERT INTO reactions (id, memoryId, reactionType, authorName, authorEmail, createdAt)
      VALUES (?, ?, ?, ?, ?, ?);`,
