@@ -40,6 +40,20 @@ async function ensureAlbumSchema() {
   if (!db) return;
   const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(albums);`);
   const columnNames = new Set(columns.map((column) => column.name));
+  const hasLegacyNameColumn = columnNames.has("name");
+  let hasTitleColumn = columnNames.has("title");
+
+  if (!hasTitleColumn) {
+    await db!.execAsync(`ALTER TABLE albums ADD COLUMN title TEXT;`);
+    hasTitleColumn = true;
+    columnNames.add("title");
+  }
+
+  if (hasTitleColumn && hasLegacyNameColumn) {
+    await db!.execAsync(
+      `UPDATE albums SET title = name WHERE title IS NULL AND name IS NOT NULL;`
+    );
+  }
   const addColumn = async (name: string, definition: string) => {
     if (columnNames.has(name)) return;
     await db!.execAsync(`ALTER TABLE albums ADD COLUMN ${name} ${definition};`);
@@ -216,7 +230,7 @@ function mapUser(row: any): UserProfile {
 function mapAlbum(row: any, memberCount = 0): Album {
   return {
     id: row.id,
-    title: row.title,
+    title: row.title ?? row.name ?? "",
     description: row.description ?? "",
     coverImage: row.coverImage ?? null,
     inviteCode: row.inviteCode,
@@ -498,7 +512,7 @@ export async function joinAlbumByCode(inviteCode: string, user: UserProfile): Pr
     [
       membershipId,
       albumRow.id,
-      albumRow.title,
+      albumRow.title ?? albumRow.name ?? "",
       user.email,
       user.fullName,
       "member",
@@ -516,7 +530,7 @@ export async function joinAlbumByCode(inviteCode: string, user: UserProfile): Pr
     membership: mapMembership({
       id: membershipId,
       albumId: albumRow.id,
-      albumTitle: albumRow.title,
+      albumTitle: albumRow.title ?? albumRow.name ?? "",
       userEmail: user.email,
       userName: user.fullName,
       role: "member",
