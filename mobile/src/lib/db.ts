@@ -662,6 +662,150 @@ export async function toggleReaction(params: {
 
   const id = uuid();
   const createdAt = Date.now();
+
+  const id = data.id ?? uuid();
+  await db!.runAsync(
+    `INSERT INTO memories (id, albumId, albumTitle, title, caption, memoryDate, mediaType, mediaUri, locationName, tags, authorName, authorEmail, reactionCount, commentCount, createdAt, createdDate)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?);`,
+    [
+      id,
+      data.albumId,
+      data.albumTitle,
+      data.title,
+      data.caption ?? "",
+      data.memoryDate,
+      data.mediaType,
+      data.mediaUri ?? null,
+      data.locationName ?? null,
+      JSON.stringify(data.tags ?? []),
+      data.authorName,
+      data.authorEmail,
+      createdAt,
+      new Date(createdAt).toISOString(),
+    ]
+  );
+  const row = await db!.getFirstAsync<any>(`SELECT * FROM memories WHERE id = ?;`, [id]);
+  return mapMemory(row);
+}
+
+export async function updateMemory(id: string, updates: Partial<Memory>): Promise<void> {
+  await ensureDb();
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.title !== undefined) {
+    fields.push("title = ?");
+    values.push(updates.title);
+  }
+  if (updates.caption !== undefined) {
+    fields.push("caption = ?");
+    values.push(updates.caption ?? "");
+  }
+  if (updates.memoryDate !== undefined) {
+    fields.push("memoryDate = ?");
+    values.push(updates.memoryDate);
+  }
+  if (updates.tags !== undefined) {
+    fields.push("tags = ?");
+    values.push(JSON.stringify(updates.tags));
+  }
+  if (updates.reactionCount !== undefined) {
+    fields.push("reactionCount = ?");
+    values.push(updates.reactionCount);
+  }
+  if (updates.commentCount !== undefined) {
+    fields.push("commentCount = ?");
+    values.push(updates.commentCount);
+  }
+  if (updates.albumTitle !== undefined) {
+    fields.push("albumTitle = ?");
+    values.push(updates.albumTitle);
+  }
+  if (updates.locationName !== undefined) {
+    fields.push("locationName = ?");
+    values.push(updates.locationName ?? null);
+  }
+
+  if (fields.length === 0) return;
+
+  values.push(id);
+  await db!.runAsync(
+    `UPDATE memories SET ${fields.join(", ")} WHERE id = ?;`,
+    values
+  );
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  await ensureDb();
+  await db!.runAsync(`DELETE FROM comments WHERE memoryId = ?;`, [id]);
+  await db!.runAsync(`DELETE FROM reactions WHERE memoryId = ?;`, [id]);
+  await db!.runAsync(`DELETE FROM memories WHERE id = ?;`, [id]);
+}
+
+export async function listComments(memoryId: string): Promise<Comment[]> {
+  await ensureDb();
+  const rows = await db!.getAllAsync<any>(
+    `SELECT * FROM comments WHERE memoryId = ? ORDER BY createdAt DESC;`,
+    [memoryId]
+  );
+  return rows.map(mapComment);
+}
+
+export async function createComment(data: {
+  memoryId: string;
+  text: string;
+  authorName: string;
+  authorEmail: string;
+}): Promise<Comment> {
+  await ensureDb();
+  const id = uuid();
+  const createdAt = Date.now();
+  await db!.runAsync(
+    `INSERT INTO comments (id, memoryId, text, authorName, authorEmail, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?);`,
+    [id, data.memoryId, data.text, data.authorName, data.authorEmail, createdAt]
+  );
+  await db!.runAsync(
+    `UPDATE memories SET commentCount = commentCount + 1 WHERE id = ?;`,
+    [data.memoryId]
+  );
+  const row = await db!.getFirstAsync<any>(`SELECT * FROM comments WHERE id = ?;`, [id]);
+  return mapComment(row);
+}
+
+export async function listReactions(memoryId: string): Promise<Reaction[]> {
+  await ensureDb();
+  const rows = await db!.getAllAsync<any>(
+    `SELECT * FROM reactions WHERE memoryId = ? ORDER BY createdAt DESC;`,
+    [memoryId]
+  );
+  return rows.map(mapReaction);
+}
+
+export async function toggleReaction(params: {
+  memoryId: string;
+  reactionType?: Reaction["reactionType"];
+  authorName: string;
+  authorEmail: string;
+}): Promise<boolean> {
+  await ensureDb();
+  const reaction = await db!.getFirstAsync<any>(
+    `SELECT * FROM reactions WHERE memoryId = ? AND authorEmail = ?;`,
+    [params.memoryId, params.authorEmail]
+  );
+
+  if (reaction) {
+    await db!.runAsync(`DELETE FROM reactions WHERE id = ?;`, [reaction.id]);
+    await db!.runAsync(
+      `UPDATE memories SET reactionCount = CASE WHEN reactionCount > 0 THEN reactionCount - 1 ELSE 0 END WHERE id = ?;`,
+      [params.memoryId]
+    );
+    return false;
+  }
+
+  const id = uuid();
+  const createdAt = Date.now();
+>>>>>>> main
   await db!.runAsync(
     `INSERT INTO reactions (id, memoryId, reactionType, authorName, authorEmail, createdAt)
      VALUES (?, ?, ?, ?, ?, ?);`,
