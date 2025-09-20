@@ -36,9 +36,116 @@ async function generateUniqueInviteCode(): Promise<string> {
   throw new Error("INVITE_CODE_GENERATION_FAILED");
 }
 
+async function migrateLegacyAlbumIds(columns: { name: string; type: string }[]) {
+  if (!db) return;
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  const selectColumn = (name: string, fallback: string) =>
+    columnNames.has(name) ? name : fallback;
+
+  const titleExpr = (() => {
+    const sources = [] as string[];
+    if (columnNames.has("title")) sources.push("title");
+    if (columnNames.has("name")) sources.push("name");
+    if (sources.length === 0) {
+      return "''";
+    }
+    return `COALESCE(${sources.join(", ")}, '')`;
+  })();
+
+  const descriptionExpr = selectColumn("description", "NULL");
+  const coverImageExpr = selectColumn("coverImage", "NULL");
+  const inviteCodeExpr = selectColumn("inviteCode", "NULL");
+  const createdByEmailExpr = selectColumn("createdByEmail", "NULL");
+  const createdByNameExpr = selectColumn("createdByName", "NULL");
+  const createdAtExpr = selectColumn(
+    "createdAt",
+    "CAST(strftime('%s', 'now') AS INTEGER) * 1000"
+  );
+
+  await db!.execAsync("BEGIN TRANSACTION;");
+  try {
+    await db!.execAsync(`DROP TABLE IF EXISTS albums_new;`);
+    await db!.execAsync(`
+      CREATE TABLE albums_new (
+        id TEXT PRIMARY KEY NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        coverImage TEXT,
+        inviteCode TEXT UNIQUE,
+        createdByEmail TEXT,
+        createdByName TEXT,
+        createdAt INTEGER NOT NULL
+      );
+    `);
+
+    await db!.execAsync(`
+      INSERT INTO albums_new (
+        id,
+        title,
+        description,
+        coverImage,
+        inviteCode,
+        createdByEmail,
+        createdByName,
+        createdAt
+      )
+      SELECT
+        CAST(id AS TEXT) AS id,
+        ${titleExpr} AS title,
+        ${descriptionExpr} AS description,
+        ${coverImageExpr} AS coverImage,
+        ${inviteCodeExpr} AS inviteCode,
+        ${createdByEmailExpr} AS createdByEmail,
+        ${createdByNameExpr} AS createdByName,
+        ${createdAtExpr} AS createdAt
+      FROM albums;
+    `);
+
+    await db!.execAsync(`DROP TABLE albums;`);
+    await db!.execAsync(`ALTER TABLE albums_new RENAME TO albums;`);
+
+    await db!.execAsync(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_inviteCode
+      ON albums(inviteCode)
+      WHERE inviteCode IS NOT NULL;
+    `);
+
+    const dependentTables = [
+      { table: "album_memberships", column: "albumId" },
+      { table: "memories", column: "albumId" },
+    ];
+
+    for (const { table, column } of dependentTables) {
+      const exists = await db!.getFirstAsync<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?;`,
+        [table]
+      );
+
+      if (exists) {
+        await db!.execAsync(
+          `UPDATE ${table} SET ${column} = CAST(${column} AS TEXT) WHERE ${column} IS NOT NULL;`
+        );
+      }
+    }
+
+    await db!.execAsync("COMMIT;");
+  } catch (error) {
+    await db!.execAsync("ROLLBACK;");
+    throw error;
+  }
+}
+
 async function ensureAlbumSchema() {
   if (!db) return;
-  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(albums);`);
+  let columns = await db.getAllAsync<{ name: string; type: string }>(`PRAGMA table_info(albums);`);
+  const idColumn = columns.find((column) => column.name === "id");
+
+  if (idColumn && idColumn.type.toUpperCase() === "INTEGER") {
+    await migrateLegacyAlbumIds(columns);
+    columns = await db.getAllAsync<{ name: string; type: string }>(`PRAGMA table_info(albums);`);
+  }
+
   const columnNames = new Set(columns.map((column) => column.name));
   let hasTitle = columnNames.has("title");
   const hasName = columnNames.has("name");
