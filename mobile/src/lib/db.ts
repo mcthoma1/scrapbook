@@ -187,6 +187,7 @@ async function ensureDb() {
     );
   `);
 
+
   await ensureAlbumSchema();
   await ensureAlbumMembershipSchema();
 }
@@ -571,6 +572,7 @@ export async function getMemoryById(id: string): Promise<Memory | null> {
   return row ? mapMemory(row) : null;
 }
 
+
 export async function createMemory(data: NewMemory): Promise<Memory> {
   await ensureDb();
   const createdAt = Date.now();
@@ -683,6 +685,7 @@ export async function createComment(data: {
   const row = await db!.getFirstAsync<any>(`SELECT * FROM comments WHERE id = ?;`, [id]);
   return mapComment(row);
 }
+
 
 export async function listReactions(memoryId: string): Promise<Reaction[]> {
   await ensureDb();
