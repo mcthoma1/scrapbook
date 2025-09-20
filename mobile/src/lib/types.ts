@@ -1,20 +1,87 @@
-// SUMMARY: App-wide types so every file agrees on the data shape used in DB.
-
-// A single row in the local "media" table.
-export type MediaItem = {
-  id: string;            // unique id (e.g., Date.now().toString())
-  uri: string;           // file location in the app's private folder
-  createdAt: number;     // epoch ms
-
-  // Optional metadata that db.ts already reads/writes.
-  title?: string | null;
-  note?: string | null;
-  albumId?: number | null;
+export type UserProfile = {
+  id: string;
+  email: string;
+  fullName: string;
+  familyRole?: string;
+  bio?: string;
+  profileImage?: string | null;
+  notificationPrefs: {
+    newMemories: boolean;
+    newComments: boolean;
+  };
+  createdAt: number;
 };
 
-// (Used in Phase 2; kept here so imports won’t break)
 export type Album = {
-  id: number;
-  name: string;
-  createdAt: number;     // epoch ms
+  id: string;
+  title: string;
+  description?: string;
+  coverImage?: string | null;
+  inviteCode: string;
+  createdByEmail: string;
+  createdByName: string;
+  createdAt: number;
+  memberCount: number;
+};
+
+export type AlbumMembership = {
+  id: string;
+  albumId: string;
+  albumTitle: string;
+  userEmail: string;
+  userName: string;
+  role: "owner" | "member";
+  joinedDate: number;
+};
+
+export type Memory = {
+  id: string;
+  albumId: string;
+  albumTitle: string;
+  title: string;
+  caption?: string;
+  memoryDate: string;
+  mediaType: "photo" | "video" | "voice" | "text";
+  mediaUri?: string | null;
+  locationName?: string | null;
+  tags: string[];
+  authorName: string;
+  authorEmail: string;
+  reactionCount: number;
+  commentCount: number;
+  createdAt: number;
+  createdDate: string;
+};
+
+export type NewMemory = {
+  id?: string;
+  albumId: string;
+  albumTitle: string;
+  title: string;
+  caption?: string;
+  memoryDate: string;
+  mediaType: Memory["mediaType"];
+  mediaUri?: string | null;
+  locationName?: string | null;
+  tags?: string[];
+  authorName: string;
+  authorEmail: string;
+};
+
+export type Comment = {
+  id: string;
+  memoryId: string;
+  text: string;
+  authorName: string;
+  authorEmail: string;
+  createdAt: number;
+};
+
+export type Reaction = {
+  id: string;
+  memoryId: string;
+  reactionType: "heart";
+  authorName: string;
+  authorEmail: string;
+  createdAt: number;
 };
