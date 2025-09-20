@@ -40,25 +40,25 @@ async function ensureAlbumSchema() {
   if (!db) return;
   const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(albums);`);
   const columnNames = new Set(columns.map((column) => column.name));
-  const hasLegacyNameColumn = columnNames.has("name");
-  let hasTitleColumn = columnNames.has("title");
-
-  if (!hasTitleColumn) {
-    await db!.execAsync(`ALTER TABLE albums ADD COLUMN title TEXT;`);
-    hasTitleColumn = true;
-    columnNames.add("title");
-  }
-
-  if (hasTitleColumn && hasLegacyNameColumn) {
-    await db!.execAsync(
-      `UPDATE albums SET title = name WHERE title IS NULL AND name IS NOT NULL;`
-    );
-  }
+  let hasTitle = columnNames.has("title");
+  const hasName = columnNames.has("name");
   const addColumn = async (name: string, definition: string) => {
     if (columnNames.has(name)) return;
     await db!.execAsync(`ALTER TABLE albums ADD COLUMN ${name} ${definition};`);
     columnNames.add(name);
   };
+
+  if (!hasTitle) {
+    await db!.execAsync(`ALTER TABLE albums ADD COLUMN title TEXT;`);
+    columnNames.add("title");
+    hasTitle = true;
+  }
+
+  if (hasTitle && hasName) {
+    await db!.execAsync(
+      `UPDATE albums SET title = name WHERE COALESCE(TRIM(title), '') = '' AND name IS NOT NULL;`
+    );
+  }
 
   await addColumn("description", "TEXT");
   await addColumn("coverImage", "TEXT");
@@ -185,7 +185,8 @@ async function ensureDb() {
       createdAt INTEGER NOT NULL,
       FOREIGN KEY (memoryId) REFERENCES memories(id) ON DELETE CASCADE
     );
-  `)
+  `);
+
 
   await ensureAlbumSchema();
   await ensureAlbumMembershipSchema();
@@ -512,7 +513,7 @@ export async function joinAlbumByCode(inviteCode: string, user: UserProfile): Pr
     [
       membershipId,
       albumRow.id,
-      albumRow.title ?? albumRow.name ?? "",
+      albumRow.title,
       user.email,
       user.fullName,
       "member",
@@ -530,7 +531,7 @@ export async function joinAlbumByCode(inviteCode: string, user: UserProfile): Pr
     membership: mapMembership({
       id: membershipId,
       albumId: albumRow.id,
-      albumTitle: albumRow.title ?? albumRow.name ?? "",
+      albumTitle: albumRow.title,
       userEmail: user.email,
       userName: user.fullName,
       role: "member",
@@ -570,6 +571,7 @@ export async function getMemoryById(id: string): Promise<Memory | null> {
   const row = await db!.getFirstAsync<any>(`SELECT * FROM memories WHERE id = ?;`, [id]);
   return row ? mapMemory(row) : null;
 }
+
 
 export async function createMemory(data: NewMemory): Promise<Memory> {
   await ensureDb();
@@ -683,6 +685,8 @@ export async function createComment(data: {
   const row = await db!.getFirstAsync<any>(`SELECT * FROM comments WHERE id = ?;`, [id]);
   return mapComment(row);
 }
+
+
 export async function listReactions(memoryId: string): Promise<Reaction[]> {
   await ensureDb();
   const rows = await db!.getAllAsync<any>(
